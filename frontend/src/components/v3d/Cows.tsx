@@ -180,14 +180,14 @@ function Cow({ position, rotation = 0, scale = 1, variant = 'brown' }: CowProps)
                 <group position={[0.25, 0.3, 0.4]} rotation={[0, Math.PI / 4, 0]}>
                     <mesh>
                         <sphereGeometry args={[0.09, 16, 16]} />
-                        <meshStandardMaterial color="#0a0502" roughness={0.05} clearcoat={1.0} />
+                        <meshPhysicalMaterial color="#0a0502" roughness={0.05} clearcoat={1.0} />
                     </mesh>
                 </group>
                 {/* Right Eye */}
                 <group position={[0.25, 0.3, -0.4]} rotation={[0, -Math.PI / 4, 0]}>
                     <mesh>
                         <sphereGeometry args={[0.09, 16, 16]} />
-                        <meshStandardMaterial color="#0a0502" roughness={0.05} clearcoat={1.0} />
+                        <meshPhysicalMaterial color="#0a0502" roughness={0.05} clearcoat={1.0} />
                     </mesh>
                 </group>
 
@@ -264,7 +264,7 @@ function Cow({ position, rotation = 0, scale = 1, variant = 'brown' }: CowProps)
             {/* ═══ BELL — golden, on neck ═══ */}
             <mesh position={[1.15, -0.1, 0]}>
                 <sphereGeometry args={[0.08, 16, 16]} />
-                <meshStandardMaterial color="#FFD700" metalness={0.9} roughness={0.08} clearcoat={1.0} />
+                <meshPhysicalMaterial color="#FFD700" metalness={0.9} roughness={0.08} clearcoat={1.0} />
             </mesh>
         </group>
     );

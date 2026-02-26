@@ -28,7 +28,7 @@ function Tree({ position, scale = 1 }: { position: [number, number, number]; sca
             {/* Trunk — dark brown, tapered, organic */}
             <mesh position={[0, 1.5, 0]} castShadow>
                 <cylinderGeometry args={[0.15, 0.4, 3, 24]} />
-                <meshStandardMaterial color="#6b4226" roughness={0.85} clearcoat={0.03} />
+                <meshPhysicalMaterial color="#6b4226" roughness={0.85} clearcoat={0.03} />
             </mesh>
             {/* Trunk root flare */}
             <mesh position={[0, 0.1, 0]}>
@@ -39,7 +39,7 @@ function Tree({ position, scale = 1 }: { position: [number, number, number]; sca
             {/* Foliage — AAA style, 5 overlapping spheres, cool dark greens */}
             <mesh position={[0, 3.8, 0]} castShadow>
                 <sphereGeometry args={[2.0, 32, 24]} />
-                <meshStandardMaterial color="#2d6b1e" roughness={0.7} clearcoat={0.05} />
+                <meshPhysicalMaterial color="#2d6b1e" roughness={0.7} clearcoat={0.05} />
             </mesh>
             <mesh position={[0.7, 4.5, 0.4]} castShadow>
                 <sphereGeometry args={[1.5, 28, 20]} />
@@ -80,7 +80,7 @@ function FenceSegment({ start, end }: { start: [number, number, number]; end: [n
             {/* Rounded posts */}
             <mesh position={[start[0], startY, start[2]]} castShadow>
                 <cylinderGeometry args={[0.07, 0.09, 1.2, 12]} />
-                <meshStandardMaterial color="#8b7355" roughness={0.85} clearcoat={0.03} />
+                <meshPhysicalMaterial color="#8b7355" roughness={0.85} clearcoat={0.03} />
             </mesh>
             {/* Post cap — rounded */}
             <mesh position={[start[0], startY + 0.6, start[2]]}>
@@ -89,7 +89,7 @@ function FenceSegment({ start, end }: { start: [number, number, number]; end: [n
             </mesh>
             <mesh position={[end[0], endY, end[2]]} castShadow>
                 <cylinderGeometry args={[0.07, 0.09, 1.2, 12]} />
-                <meshStandardMaterial color="#8b7355" roughness={0.85} clearcoat={0.03} />
+                <meshPhysicalMaterial color="#8b7355" roughness={0.85} clearcoat={0.03} />
             </mesh>
             <mesh position={[end[0], endY + 0.6, end[2]]}>
                 <sphereGeometry args={[0.09, 10, 10]} />
@@ -128,7 +128,7 @@ function Pond({ position }: { position: [number, number, number] }) {
             {/* Water surface — deep blue */}
             <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} scale={[1.5, 1, 1]} receiveShadow>
                 <circleGeometry args={[4, 48]} />
-                <meshStandardMaterial
+                <meshPhysicalMaterial
                     color="#2a6b8a"
                     roughness={0.02}
                     metalness={0.5}
@@ -203,7 +203,7 @@ function FlowerPatch({ position, count = 15 }: { position: [number, number, numb
                     {/* Flower head — multiple petals effect */}
                     <mesh position={[0, f.height + 0.05, 0]}>
                         <sphereGeometry args={[f.scale * 0.18, 16, 12]} />
-                        <meshStandardMaterial color={f.color} roughness={0.4} clearcoat={0.1} />
+                        <meshPhysicalMaterial color={f.color} roughness={0.4} clearcoat={0.1} />
                     </mesh>
                     {/* Center */}
                     <mesh position={[0, f.height + 0.08, 0]}>
@@ -315,7 +315,7 @@ function CloudGroup() {
                     {Array.from({ length: cloud.puffs }).map((_, j) => (
                         <mesh key={j} position={[(j - cloud.puffs / 2) * 1.2, Math.random() * 0.4, Math.random() * 0.6]}>
                             <sphereGeometry args={[1.0 + Math.random() * 0.8, 24, 20]} />
-                            <meshStandardMaterial
+                            <meshPhysicalMaterial
                                 color="#ffffff"
                                 roughness={0.95}
                                 transparent

@@ -302,8 +302,8 @@ export default function FarmBarn({ position = [0, 0, 0] as [number, number, numb
                     <mesh rotation={[0, 0, Math.PI / 3]} position={[0, 0, 0.19]}><boxGeometry args={[0.3, 9.4, 0.1]} /><meshPhysicalMaterial color="#2d2d2d" metalness={0.6} /></mesh>
                     <mesh rotation={[0, 0, -Math.PI / 3]} position={[0, 0, 0.19]}><boxGeometry args={[0.3, 9.4, 0.1]} /><meshPhysicalMaterial color="#2d2d2d" metalness={0.6} /></mesh>
                     {/* Iron door handle */}
-                    <mesh position={[-1.8, 0, 0.25]}>
-                        <torusGeometry args={[0.2, 0.04, 8, 16]} rotation={[0, Math.PI / 2, 0]} />
+                    <mesh position={[-1.8, 0, 0.25]} rotation={[0, Math.PI / 2, 0]}>
+                        <torusGeometry args={[0.2, 0.04, 8, 16]} />
                         <meshPhysicalMaterial color="#111111" metalness={1} />
                     </mesh>
                 </group>
