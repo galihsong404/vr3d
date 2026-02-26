@@ -11,6 +11,18 @@ html {
         @apply text-slate-100 antialiased overflow-x-hidden;
         background: black;
         min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Hide scrollbar globally for immersive feel */
+    ::-webkit-scrollbar {
+        width: 0px;
+        background: transparent;
+    }
+
+    * {
+        scrollbar-width: none;
     }
 }
 
@@ -31,6 +43,26 @@ html {
         box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.3);
     }
 
+    /* VR Landing Glass Panels */
+    .glass-vr-panel {
+        @apply backdrop-blur-2xl border border-white/10 rounded-3xl;
+        background: rgba(0, 0, 0, 0.4);
+        box-shadow:
+            0 8px 32px rgba(0, 0, 0, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    .glass-vr-card {
+        @apply backdrop-blur-xl border border-white/10 rounded-2xl transition-all duration-300;
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .glass-vr-card:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(251, 191, 36, 0.3);
+        box-shadow: 0 8px 25px rgba(251, 191, 36, 0.1);
+    }
+
     /* High Contrast AAA Game Button */
     .btn-aaa-primary {
         @apply relative bg-gradient-to-r from-yellow-400 via-orange-500 to-yellow-600 text-black font-black uppercase tracking-widest py-4 px-10 rounded-sm transition-all duration-300 hover:scale-110 active:scale-95;
@@ -48,6 +80,24 @@ html {
     /* AAA Game Background Container */
     .bg-aaa-hero {
         @apply fixed inset-0 w-full h-full object-cover -z-20 brightness-[0.5] contrast-[1.1] saturate-[1.1];
+    }
+
+    /* Custom scrollbar for DApp dashboard */
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.2);
     }
 }
 
@@ -81,4 +131,30 @@ html {
 
 .animate-glow {
     animation: glow 3s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+/* Scrollbar hide utility for mobile nav */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }

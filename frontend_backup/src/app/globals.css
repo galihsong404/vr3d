@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+    scroll-behavior: smooth;
+}
+
+@layer base {
+    body {
+        @apply text-slate-100 antialiased overflow-x-hidden;
+        background: black;
+        min-height: 100vh;
+    }
+}
+
+@layer components {
+
+    /* Premium Glassmorphism Effect */
+    .glass-panel {
+        @apply bg-glass-dark backdrop-blur-xl border border-glass-border rounded-2xl;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .glass-card {
+        @apply bg-glass-light backdrop-blur-lg border border-glass-border rounded-xl transition-all duration-300 hover:-translate-y-1;
+        box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.15);
+    }
+
+    .glass-card:hover {
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.3);
+    }
+
+    /* High Contrast AAA Game Button */
+    .btn-aaa-primary {
+        @apply relative bg-gradient-to-r from-yellow-400 via-orange-500 to-yellow-600 text-black font-black uppercase tracking-widest py-4 px-10 rounded-sm transition-all duration-300 hover:scale-110 active:scale-95;
+        box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+    }
+
+    .btn-aaa-primary:hover {
+        box-shadow: 0 0 40px rgba(251, 191, 36, 0.8);
+    }
+
+    .btn-aaa-secondary {
+        @apply relative bg-transparent border-2 border-white/80 text-white font-bold uppercase tracking-widest py-4 px-10 rounded-sm transition-all duration-300 hover:bg-white hover:text-black;
+    }
+
+    /* AAA Game Background Container */
+    .bg-aaa-hero {
+        @apply fixed inset-0 w-full h-full object-cover -z-20 brightness-[0.5] contrast-[1.1] saturate-[1.1];
+    }
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+.animate-float {
+    animation: float 6s ease-in-out infinite;
+}
+
+@keyframes glow {
+
+    0%,
+    100% {
+        filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.5));
+    }
+
+    50% {
+        filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.8));
+    }
+}
+
+.animate-glow {
+    animation: glow 3s ease-in-out infinite;
+}

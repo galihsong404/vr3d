@@ -62,6 +62,7 @@ export default function DApp() {
     const [authError, setAuthError] = useState<string | null>(null);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
     const [referralAddress, setReferralAddress] = useState('');
+    const [isWalletSwitching, setIsWalletSwitching] = useState(false);
 
     // Web2 Feed/Harvest State
     const [isActionLoading, setIsActionLoading] = useState(false);
@@ -101,15 +102,20 @@ export default function DApp() {
     }, [address, authenticate, signMessageAsync, isAuthenticating]);
 
     // Auth flow: when wallet connects, only CHECK registration — never auto-trigger popups
+    // BUG FIX #5: Added isWalletSwitching guard to prevent race conditions during wallet switch
     useEffect(() => {
-        if (!mounted || status !== 'connected' || !address) return;
+        if (!mounted || status !== 'connected' || !address || isWalletSwitching) return;
 
         const isWrongWallet = userWallet && address.toLowerCase() !== userWallet.toLowerCase();
 
         // If wallet changed, clear old session first
         if (isWrongWallet) {
             console.log('Wallet changed, clearing stale session');
+            setIsWalletSwitching(true);
             logout();
+            try { localStorage.removeItem('cash-cow-vault'); } catch { }
+            // Wait for state to settle before allowing re-check
+            setTimeout(() => setIsWalletSwitching(false), 500);
             return;
         }
 
@@ -119,7 +125,7 @@ export default function DApp() {
                 setNeedsRegistration(!exists);
             });
         }
-    }, [status, address, mounted, isAuthenticated, userWallet, checkRegistration, setNeedsRegistration, logout]);
+    }, [status, address, mounted, isAuthenticated, userWallet, checkRegistration, setNeedsRegistration, logout, isWalletSwitching]);
 
     // Registration via direct ETH transfer to treasury (works without deployed contract)
     const { sendTransaction, data: regTxData, isLoading: isRegTxPending } = useSendTransaction();
@@ -128,12 +134,16 @@ export default function DApp() {
         hash: regTxData?.hash,
     });
 
-    // After registration TX success, update state
+    // BUG FIX #6: After registration TX success, auto-continue to sign step
     useEffect(() => {
-        if (isRegTxSuccess) {
+        if (isRegTxSuccess && address) {
             setNeedsRegistration(false);
+            // Auto-trigger signature step after successful registration payment
+            setTimeout(() => {
+                handleAuthenticate();
+            }, 1000);
         }
-    }, [isRegTxSuccess, setNeedsRegistration]);
+    }, [isRegTxSuccess, setNeedsRegistration, address]);
 
     const handleRegister = () => {
         setAuthError(null);
@@ -147,12 +157,25 @@ export default function DApp() {
         }
     };
 
-    // Fetch data for existing session on mount
+    // BUG FIX #2: Validate persisted token on mount — detect expired zombie sessions
     useEffect(() => {
         if (mounted && isAuthenticated && authToken) {
-            fetchFarmData();
+            fetch('/api/v1/farm/status', {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            }).then(res => {
+                if (res.status === 401 || res.status === 403) {
+                    console.log('Token expired, forcing re-auth');
+                    logout();
+                    try { localStorage.removeItem('cash-cow-vault'); } catch { }
+                } else if (res.ok) {
+                    fetchFarmData();
+                }
+            }).catch(() => {
+                // Network error — keep session but don't fetch data
+                console.warn('Backend unreachable, keeping cached session');
+            });
         }
-    }, [mounted, isAuthenticated, authToken, fetchFarmData]);
+    }, [mounted, isAuthenticated, authToken]);
 
     // Clear auth if wallet explicitly disconnects
     useEffect(() => {
@@ -162,6 +185,7 @@ export default function DApp() {
         }
     }, [status, mounted, isAuthenticated, logout]);
 
+    // BUG FIX #3: Disconnect now also clears Zustand persisted storage (cash-cow-vault)
     const handleDisconnect = () => {
         // 1. Clear wagmi connection
         disconnect();
@@ -169,8 +193,7 @@ export default function DApp() {
         // 2. Clear our app auth state
         logout();
 
-        // 3. Clear Web3Modal / WalletConnect cached sessions from localStorage
-        // This is critical — without this, reconnecting auto-picks the old wallet
+        // 3. Clear ALL cached sessions from localStorage
         try {
             const keysToRemove: string[] = [];
             for (let i = 0; i < localStorage.length; i++) {
@@ -181,15 +204,16 @@ export default function DApp() {
                     key.startsWith('wagmi') ||
                     key.startsWith('@w3m') ||
                     key.includes('walletconnect') ||
-                    key.includes('Web3Modal')
+                    key.includes('Web3Modal') ||
+                    key === 'cash-cow-vault'  // ← FIX: Also clear Zustand persisted auth
                 )) {
                     keysToRemove.push(key);
                 }
             }
             keysToRemove.forEach(key => localStorage.removeItem(key));
-            console.log(`Cleared ${keysToRemove.length} WalletConnect cache keys`);
+            console.log(`Cleared ${keysToRemove.length} cache keys (including Zustand vault)`);
         } catch (e) {
-            console.error('Failed to clear WC cache:', e);
+            console.error('Failed to clear cache:', e);
         }
 
         // 4. Redirect to home page for a clean start
@@ -1271,53 +1295,39 @@ export default function DApp() {
                 </div>
             </main>
 
-            {/* Mobile Bottom Navigation Bar */}
-            <nav className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-xl border-t border-white/10 z-50 flex items-center justify-around px-4 py-3 md:hidden">
-                {menuGroups[0].items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                        <button
-                            key={item.id}
-                            onClick={() => setActiveTab(item.id as any)}
-                            className={`flex flex-col items-center gap-1 transition-all ${activeTab === item.id ? 'text-yellow-400 scale-110' : 'text-slate-500'}`}
-                        >
-                            <div className={`p-2 rounded-xl ${activeTab === item.id ? 'bg-yellow-400/10' : ''}`}>
-                                <Icon size={20} />
-                            </div>
-                            <span className="text-[8px] font-black uppercase tracking-widest">
-                                {item.id === 'farm' ? 'FARM' :
-                                    item.id === 'vault-inapp' ? 'VAULT' :
-                                        item.id === 'market' ? 'SHOP' :
-                                            item.id === 'staking' ? 'STAKE' :
-                                                item.label.split(' ')[0]}
-                            </span>
-                        </button>
-                    );
-                })}
-                {/* Staking/NFT Tab */}
-                {menuGroups[1].items.slice(0, 1).map((item) => (
-                    <button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id as any)}
-                        className={`flex flex-col items-center gap-1 transition-all ${activeTab === item.id ? 'text-yellow-400 scale-110' : 'text-slate-500'}`}
-                    >
-                        <div className={`p-2 rounded-xl ${activeTab === item.id ? 'bg-yellow-400/10' : ''}`}>
-                            <item.icon size={20} />
-                        </div>
-                        <span className="text-[8px] font-black uppercase tracking-widest">STAKE</span>
-                    </button>
-                ))}
-
-                {/* Profile Tab */}
-                <button
-                    onClick={() => setActiveTab('profile')}
-                    className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-yellow-400 scale-110' : 'text-slate-500'}`}
-                >
-                    <div className={`p-2 rounded-xl ${activeTab === 'profile' ? 'bg-yellow-400/10' : ''}`}>
-                        <ShieldCheck size={20} />
-                    </div>
-                    <span className="text-[8px] font-black uppercase tracking-widest">PROFILE</span>
-                </button>
+            {/* Mobile Bottom Navigation Bar — ALL menu items, scrollable */}
+            <nav className="fixed bottom-0 left-0 right-0 bg-black/90 backdrop-blur-xl border-t border-white/10 z-50 md:hidden">
+                <div className="flex items-center overflow-x-auto gap-1 px-2 py-2 scrollbar-hide">
+                    {flatTabs.map((item) => {
+                        const Icon = item.icon;
+                        const shortLabel =
+                            item.id === 'farm' ? 'Farm' :
+                                item.id === 'vault-inapp' ? 'Vault' :
+                                    item.id === 'market' ? 'Shop' :
+                                        item.id === 'staking' ? 'Stake' :
+                                            item.id === 'listing' ? 'NFT' :
+                                                item.id === 'finance' ? 'Treasury' :
+                                                    item.id === 'referral' ? 'Network' :
+                                                        item.id === 'profile' ? 'Profile' :
+                                                            item.id === 'admin' ? 'Admin' :
+                                                                item.label.split(' ')[0];
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => setActiveTab(item.id as any)}
+                                className={`flex flex-col items-center gap-0.5 min-w-[56px] px-2 py-1.5 rounded-xl transition-all shrink-0 ${activeTab === item.id
+                                    ? 'text-yellow-400 bg-yellow-400/10 scale-105'
+                                    : 'text-slate-500'
+                                    }`}
+                            >
+                                <Icon size={18} />
+                                <span className="text-[7px] font-black uppercase tracking-wider leading-none mt-0.5">
+                                    {shortLabel}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
             </nav>
         </div >
     );

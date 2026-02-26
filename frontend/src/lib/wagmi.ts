@@ -1,7 +1,10 @@
 import { defaultWagmiConfig } from '@web3modal/wagmi/react';
 import { mainnet, polygon, bsc, bscTestnet, sepolia } from 'wagmi/chains';
 
-const projectId = 'e9489c77e12cf9091d7f3d7dd2f3e4d1'; // Hardcoded for local RDP preview reliability
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
+if (!projectId) {
+    console.error('⚠️ CRITICAL: NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set in .env.local!');
+}
 
 const metadata = {
     name: 'Cash Cow Valley',

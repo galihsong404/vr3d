@@ -18,9 +18,11 @@ export default function Navbar() {
         setMounted(true);
     }, []);
 
+    // BUG FIX #4: Also clear Zustand persisted auth when wallet disconnects from extension
     useEffect(() => {
         if (!isConnected) {
             logout();
+            try { localStorage.removeItem('cash-cow-vault'); } catch { }
         }
     }, [isConnected, logout]);
 
