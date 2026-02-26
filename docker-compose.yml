@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    env_file:
+      - .env
+    # BUG FIX: Healthcheck agar backend tidak crash saat DB belum siap
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - cow_network
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    # BUG FIX: Redis AUTH — Tanpa password, container lain yang terkompromi bisa akses penuh
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    networks:
+      - cow_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    # BUG FIX: Tunggu sampai DB dan Redis benar-benar HEALTHY, bukan hanya started
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cow_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    # BUG FIX: Membuang Hardcoded ID. Membaca dari file rahasia .env
+    env_file:
+      - .env
+    # BUG FIX: Membuang `ports` agar Next.js tidak terekspos sebelum melintasi Load Balancer.
+    depends_on:
+      - backend
+    networks:
+      - cow_network
+
+  # BUG FIX: Menambahkan Container Load Balancer NGINX ke ekosistem yang sebelumnya terlewat!
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - cow_network
+
+volumes:
+  pgdata:
+  redisdata:
+
+
+networks:
+  cow_network:
+    driver: bridge

@@ -1,0 +1,12 @@
+{
+    "name": "cash-cow-valley-root",
+    "version": "1.0.0",
+    "scripts": {
+        "dev:up": "docker-compose up -d",
+        "dev:down": "docker-compose down",
+        "dev:logs": "docker-compose logs -f",
+        "dev:rebuild": "docker-compose build --no-cache && docker-compose up -d",
+        "lint": "eslint .",
+        "format": "prettier --write ."
+    }
+}
