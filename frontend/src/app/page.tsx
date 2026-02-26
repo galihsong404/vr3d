@@ -79,6 +79,24 @@ export default function Home() {
                     </a>
                 </div>
 
+                {/* Registration Banner */}
+                <div className="mt-16 max-w-3xl mx-auto w-full">
+                    <a href="/dapp"
+                        className="block bg-gradient-to-r from-emerald-600/20 via-yellow-500/20 to-emerald-600/20 border-2 border-yellow-500/30 rounded-3xl p-8 sm:p-10 text-center hover:border-yellow-500/60 hover:scale-[1.02] transition-all duration-300 backdrop-blur-md group"
+                    >
+                        <p className="text-emerald-400 font-black uppercase tracking-[0.4em] text-xs mb-3">🎁 New Player Bonus</p>
+                        <h3 className="text-3xl sm:text-4xl font-black text-white mb-3 group-hover:text-yellow-400 transition-colors">
+                            Register to Get a <span className="text-yellow-500">Free Farm!</span>
+                        </h3>
+                        <p className="text-slate-400 text-sm max-w-lg mx-auto mb-4">
+                            Connect your wallet and sign to verify ownership. You'll receive a <span className="text-emerald-400 font-bold">Free Starter Barn + Land Plot</span> instantly. No gas fees required.
+                        </p>
+                        <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 px-6 py-2 rounded-full text-yellow-400 font-bold text-sm uppercase tracking-widest">
+                            Connect Wallet to Register →
+                        </div>
+                    </a>
+                </div>
+
                 {/* Status Bar */}
                 <div className="absolute bottom-12 flex flex-wrap justify-center gap-8 md:gap-12 text-xs font-black uppercase tracking-[0.3em] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">
                     <div className="flex items-center gap-2">

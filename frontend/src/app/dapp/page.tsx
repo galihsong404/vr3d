@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount, useSignMessage, useDisconnect } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -20,49 +20,207 @@ import {
     Plus,
     Flame,
     Download,
-    ArrowUpCircle
+    ArrowUpCircle,
+    Crown,
+    Send,
+    UserCog
 } from 'lucide-react';
 import { useGameStore } from '@/store/useGameStore';
-import Navbar from '@/components/ui/Navbar';
+
 import {
     CASH_COW_TOKEN_ABI,
     CASH_COW_TOKEN_ADDRESS,
     GOLDEN_COW_STAKING_ABI,
-    GOLDEN_COW_STAKING_ADDRESS
+    GOLDEN_COW_STAKING_ADDRESS,
+    CASH_COW_ACCESS_ABI,
+    CASH_COW_ACCESS_ADDRESS
 } from '@/contracts/constants';
-import { useContractWrite, useContractRead, usePrepareContractWrite } from 'wagmi';
+import { useContractWrite, useContractRead, usePrepareContractWrite, useWaitForTransaction, useSendTransaction } from 'wagmi';
+import { parseEther } from 'viem';
+
+const DEV_WALLET = '0xbb9468c225c35ba3cbe441660ef9de3a66eb772a';
+const REGISTRATION_FEE = '0.0001'; // ETH
 
 export default function DApp() {
-    const { isConnected, address } = useAccount();
+    const { isConnected, address, status } = useAccount();
+    const { signMessageAsync } = useSignMessage();
+    const { disconnect } = useDisconnect();
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<'farm' | 'staking' | 'market' | 'listing' | 'referral' | 'vault-inapp' | 'finance' | 'profile'>('farm');
+    const [activeTab, setActiveTab] = useState<'farm' | 'staking' | 'market' | 'listing' | 'referral' | 'vault-inapp' | 'finance' | 'profile' | 'admin'>('farm');
     const [stakingMode, setStakingMode] = useState<'unlocked' | 'locked'>('unlocked');
     const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
-    const { cows, usdtBalance, goldBalance, cowTokenBalance, dailyAdCount, grassCount, milkCount, hasBarn, web2Stakes, isLoading, fetchFarmData } = useGameStore();
+
+    const {
+        cows, usdtBalance, goldBalance, cowTokenBalance, dailyAdCount,
+        grassCount, milkCount, hasBarn, web2Stakes, isLoading,
+        isAuthenticated, isRegistered, needsRegistration, authToken, userRole, userWallet,
+        authenticate, checkRegistration, setNeedsRegistration, logout, fetchFarmData,
+        adminUsers, platformStats, fetchAdminUsers, fetchPlatformStats, adminTransfer
+    } = useGameStore();
+
     const [mounted, setMounted] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [referralAddress, setReferralAddress] = useState('');
 
     // Web2 Feed/Harvest State
     const [isActionLoading, setIsActionLoading] = useState(false);
     const [actionMessage, setActionMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
 
+    // Admin Transfer State
+    const [adminTargetWallet, setAdminTargetWallet] = useState('');
+    const [adminItemType, setAdminItemType] = useState('GOLD');
+    const [adminAmount, setAdminAmount] = useState('');
+    const [adminMessage, setAdminMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+
+    const isAdmin = userRole === 'ADMIN' || (address?.toLowerCase() === DEV_WALLET);
+
     useEffect(() => {
         setMounted(true);
-        if (isConnected) {
-            fetchFarmData('dummy-token');
+    }, []);
+
+    const handleAuthenticate = useCallback(async () => {
+        if (!address || isAuthenticating) return;
+        setIsAuthenticating(true);
+        setAuthError(null);
+        try {
+            const success = await authenticate(address, signMessageAsync, referralAddress || undefined);
+            if (!success) {
+                setAuthError('Signature verification failed. Please try again.');
+            }
+        } catch (e: any) {
+            if (e?.message?.includes('User rejected')) {
+                setAuthError('You must sign the message to verify wallet ownership.');
+            } else {
+                setAuthError('Authentication failed. Please try again.');
+            }
+            console.error('Auth error:', e);
+        } finally {
+            setIsAuthenticating(false);
         }
-    }, [isConnected]);
+    }, [address, authenticate, signMessageAsync, isAuthenticating]);
+
+    // Auth flow: when wallet connects, only CHECK registration — never auto-trigger popups
+    useEffect(() => {
+        if (!mounted || status !== 'connected' || !address) return;
+
+        const isWrongWallet = userWallet && address.toLowerCase() !== userWallet.toLowerCase();
+
+        // If wallet changed, clear old session first
+        if (isWrongWallet) {
+            console.log('Wallet changed, clearing stale session');
+            logout();
+            return;
+        }
+
+        // If not authenticated, just check registration status (no popup)
+        if (!isAuthenticated) {
+            checkRegistration(address).then(({ exists }) => {
+                setNeedsRegistration(!exists);
+            });
+        }
+    }, [status, address, mounted, isAuthenticated, userWallet, checkRegistration, setNeedsRegistration, logout]);
+
+    // Registration via direct ETH transfer to treasury (works without deployed contract)
+    const { sendTransaction, data: regTxData, isLoading: isRegTxPending } = useSendTransaction();
+
+    const { isLoading: isRegTxConfirming, isSuccess: isRegTxSuccess } = useWaitForTransaction({
+        hash: regTxData?.hash,
+    });
+
+    // After registration TX success, update state
+    useEffect(() => {
+        if (isRegTxSuccess) {
+            setNeedsRegistration(false);
+        }
+    }, [isRegTxSuccess, setNeedsRegistration]);
+
+    const handleRegister = () => {
+        setAuthError(null);
+        try {
+            sendTransaction({
+                to: DEV_WALLET as `0x${string}`,
+                value: parseEther(REGISTRATION_FEE),
+            });
+        } catch (e: any) {
+            setAuthError(e.message || 'Registration transaction failed');
+        }
+    };
+
+    // Fetch data for existing session on mount
+    useEffect(() => {
+        if (mounted && isAuthenticated && authToken) {
+            fetchFarmData();
+        }
+    }, [mounted, isAuthenticated, authToken, fetchFarmData]);
+
+    // Clear auth if wallet explicitly disconnects
+    useEffect(() => {
+        if (mounted && status === 'disconnected' && isAuthenticated) {
+            console.log('Wallet disconnected, clearing auth');
+            logout();
+        }
+    }, [status, mounted, isAuthenticated, logout]);
+
+    const handleDisconnect = () => {
+        // 1. Clear wagmi connection
+        disconnect();
+
+        // 2. Clear our app auth state
+        logout();
+
+        // 3. Clear Web3Modal / WalletConnect cached sessions from localStorage
+        // This is critical — without this, reconnecting auto-picks the old wallet
+        try {
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (
+                    key.startsWith('wc@') ||
+                    key.startsWith('W3M') ||
+                    key.startsWith('wagmi') ||
+                    key.startsWith('@w3m') ||
+                    key.includes('walletconnect') ||
+                    key.includes('Web3Modal')
+                )) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            console.log(`Cleared ${keysToRemove.length} WalletConnect cache keys`);
+        } catch (e) {
+            console.error('Failed to clear WC cache:', e);
+        }
+
+        // 4. Redirect to home page for a clean start
+        router.push('/');
+    };
+
+    // Fetch admin data when switching to admin tab
+    useEffect(() => {
+        if (activeTab === 'admin' && isAdmin && authToken) {
+            fetchAdminUsers();
+            fetchPlatformStats();
+        }
+    }, [activeTab, isAdmin, authToken]);
+
+    const getAuthHeaders = () => ({
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+    });
 
     const handleHarvest = async () => {
+        if (!authToken) return;
         setIsActionLoading(true);
         try {
             const res = await fetch('/api/v1/farm/harvest', {
                 method: 'POST',
-                headers: { 'Authorization': 'Bearer dummy-token' }
+                headers: { 'Authorization': `Bearer ${authToken}` }
             });
             const data = await res.json();
             if (res.ok) {
                 setActionMessage({ text: `Success! Harvested ${data.data.milk_harvested} Milk`, type: 'success' });
-                fetchFarmData('dummy-token');
+                fetchFarmData();
             } else {
                 setActionMessage({ text: data.message || 'Harvest failed. Check your Vitamin care!', type: 'error' });
             }
@@ -83,7 +241,7 @@ export default function DApp() {
             });
             if (res.ok) {
                 setActionMessage({ text: 'Added Gold & Vitamins!', type: 'success' });
-                await fetchFarmData('dummy-token');
+                await fetchFarmData();
             }
         } catch (e) {
             setActionMessage({ text: 'Ad simulation failed', type: 'error' });
@@ -93,17 +251,18 @@ export default function DApp() {
     };
 
     const handleBuyInApp = async (itemType: string, quantity: number) => {
+        if (!authToken) return;
         setIsActionLoading(true);
         try {
             const res = await fetch('/api/v1/market/buy-inapp-gold', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dummy-token' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ item_type: itemType, quantity })
             });
             const data = await res.json();
             if (res.ok) {
                 setActionMessage({ text: `Bought ${itemType}!`, type: 'success' });
-                await fetchFarmData('dummy-token');
+                await fetchFarmData();
             } else {
                 setActionMessage({ text: data.message, type: 'error' });
             }
@@ -115,16 +274,17 @@ export default function DApp() {
     };
 
     const handleSellMilk = async (quantity: number) => {
+        if (!authToken) return;
         setIsActionLoading(true);
         try {
             const res = await fetch('/api/v1/market/sell-milk-gold', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dummy-token' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ quantity })
             });
             if (res.ok) {
                 setActionMessage({ text: 'Milk sold for Gold!', type: 'success' });
-                await fetchFarmData('dummy-token');
+                await fetchFarmData();
             }
         } catch (e) {
             setActionMessage({ text: 'Sale failed', type: 'error' });
@@ -134,16 +294,17 @@ export default function DApp() {
     };
 
     const handleSwapGold = async (amount: number, target: string) => {
+        if (!authToken) return;
         setIsActionLoading(true);
         try {
             const res = await fetch('/api/v1/market/swap-gold', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer dummy-token' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({ amount, target })
             });
             if (res.ok) {
                 setActionMessage({ text: `Swapped for ${target}!`, type: 'success' });
-                await fetchFarmData('dummy-token');
+                await fetchFarmData();
             }
         } catch (e) {
             setActionMessage({ text: 'Swap failed', type: 'error' });
@@ -154,7 +315,7 @@ export default function DApp() {
     const handleStakeInApp = async (assetType: string, amount: number) => {
         setIsActionLoading(true);
         try {
-            await useGameStore.getState().stakeInApp('dummy-token', assetType, amount);
+            await useGameStore.getState().stakeInApp(assetType, amount);
             setActionMessage({ text: `Staked ${amount} ${assetType}!`, type: 'success' });
         } catch (e) {
             setActionMessage({ text: 'Staking failed', type: 'error' });
@@ -164,7 +325,7 @@ export default function DApp() {
     const handleClaimInApp = async () => {
         setIsActionLoading(true);
         try {
-            await useGameStore.getState().claimInApp('dummy-token');
+            await useGameStore.getState().claimInApp();
             setActionMessage({ text: 'Rewards claimed!', type: 'success' });
         } catch (e) {
             setActionMessage({ text: 'Claim failed', type: 'error' });
@@ -174,7 +335,7 @@ export default function DApp() {
     const handleDeposit = async (asset: string, amount: number) => {
         setIsActionLoading(true);
         try {
-            await useGameStore.getState().deposit('dummy-token', asset, amount);
+            await useGameStore.getState().deposit(asset, amount);
             setActionMessage({ text: `Deposited ${amount} ${asset}!`, type: 'success' });
         } catch (e) {
             setActionMessage({ text: 'Deposit failed', type: 'error' });
@@ -184,11 +345,23 @@ export default function DApp() {
     const handleWithdraw = async (asset: string, amount: number) => {
         setIsActionLoading(true);
         try {
-            await useGameStore.getState().withdraw('dummy-token', asset, amount);
+            await useGameStore.getState().withdraw(asset, amount);
             setActionMessage({ text: `Withdrawn ${amount} ${asset}!`, type: 'success' });
         } catch (e) {
             setActionMessage({ text: 'Withdraw failed', type: 'error' });
         } finally { setIsActionLoading(false); }
+    };
+
+    const handleAdminTransfer = async () => {
+        if (!adminTargetWallet || !adminAmount) return;
+        setIsActionLoading(true);
+        const result = await adminTransfer(adminTargetWallet, adminItemType, adminAmount);
+        setAdminMessage({ text: result.message, type: result.success ? 'success' : 'error' });
+        if (result.success) {
+            setAdminTargetWallet('');
+            setAdminAmount('');
+        }
+        setIsActionLoading(false);
     };
 
 
@@ -229,7 +402,13 @@ export default function DApp() {
             items: [
                 { id: 'profile', label: 'Profile', icon: ShieldCheck },
             ]
-        }
+        },
+        ...((address?.toLowerCase() === DEV_WALLET || userRole === 'ADMIN') ? [{
+            title: "⚡ Admin",
+            items: [
+                { id: 'admin', label: 'Admin Panel', icon: Crown },
+            ]
+        }] : []),
     ];
 
     const flatTabs = menuGroups.flatMap(g => g.items);
@@ -304,7 +483,10 @@ export default function DApp() {
                         {isSidebarExpanded ? <ArrowUpRight className="rotate-180" size={18} /> : <ArrowUpRight size={18} />}
                     </button>
 
-                    <button className={`w-full flex items-center ${isSidebarExpanded ? 'gap-4 px-4 py-4' : 'justify-center p-4'} rounded-2xl text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all`}>
+                    <button
+                        onClick={handleDisconnect}
+                        className={`w-full flex items-center ${isSidebarExpanded ? 'gap-4 px-4 py-4' : 'justify-center p-4'} rounded-2xl text-slate-400 hover:text-red-400 hover:bg-red-500/5 transition-all`}
+                    >
                         <Power size={22} />
                         {isSidebarExpanded && (
                             <span className="font-black uppercase tracking-widest text-xs">Disconnect</span>
@@ -312,6 +494,84 @@ export default function DApp() {
                     </button>
                 </div>
             </aside >
+
+            {/* AUTH GATE OVERLAY */}
+            {isConnected && !isAuthenticated && (
+                <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex items-center justify-center">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="max-w-md w-full mx-4 p-8 rounded-[40px] bg-gradient-to-b from-slate-800/80 to-slate-900/80 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] text-center relative overflow-hidden"
+                    >
+                        {/* Decorative Background Elements */}
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-orange-500 to-yellow-400"></div>
+
+                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-yellow-400 to-orange-600 mx-auto mb-8 flex items-center justify-center shadow-2xl rotate-3">
+                            <ShieldCheck size={48} className="text-white drop-shadow-lg" />
+                        </div>
+
+                        {needsRegistration ? (
+                            <>
+                                <h2 className="text-3xl font-black text-white mb-3 tracking-tighter uppercase">Initialize Account</h2>
+                                <p className="text-slate-400 mb-6 text-sm leading-relaxed">
+                                    New farmer detected! Register to start your journey in <span className="text-yellow-400 font-bold">Cash Cow Valley</span>.
+                                </p>
+
+                                {/* Referral Address Input */}
+                                <div className="mb-6 text-left">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Referral Address (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={referralAddress}
+                                        onChange={(e) => setReferralAddress(e.target.value)}
+                                        placeholder="0x... (leave empty for default)"
+                                        className="w-full px-4 py-3 rounded-xl bg-black/60 border border-white/10 text-white text-sm font-mono placeholder:text-slate-600 focus:border-yellow-500/50 focus:outline-none transition-colors"
+                                    />
+                                </div>
+
+                                <div className="bg-black/40 p-3 rounded-xl border border-white/5 mb-6">
+                                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                                        Registration fee: <span className="text-yellow-400 font-bold">{REGISTRATION_FEE} ETH</span> + gas
+                                    </p>
+                                </div>
+
+                                <button
+                                    onClick={handleRegister}
+                                    disabled={isRegTxPending || isRegTxConfirming}
+                                    className="w-full py-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black uppercase tracking-widest text-sm hover:brightness-110 transition-all shadow-xl shadow-emerald-500/20 disabled:opacity-50"
+                                >
+                                    {isRegTxPending ? 'Confirm in Wallet...' : isRegTxConfirming ? 'Confirming on Chain...' : 'Register Now (Gas Fee)'}
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <h2 className="text-3xl font-black text-white mb-3 tracking-tighter uppercase">Security Check</h2>
+                                <p className="text-slate-400 mb-8 text-sm leading-relaxed">
+                                    Please <span className="text-yellow-400 font-bold uppercase tracking-wider">sign the message</span> in your wallet to verify ownership and access your farm dashboard.
+                                </p>
+                                <button
+                                    onClick={handleAuthenticate}
+                                    disabled={isAuthenticating}
+                                    className="w-full py-5 rounded-2xl bg-gradient-to-r from-yellow-500 to-orange-600 text-black font-black uppercase tracking-widest text-sm hover:brightness-110 transition-all shadow-xl shadow-orange-500/20 disabled:opacity-50"
+                                >
+                                    {isAuthenticating ? 'Waiting for Sign...' : 'Sign to Login'}
+                                </button>
+                            </>
+                        )}
+
+                        {authError && (
+                            <div className="mt-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-2 justify-center">
+                                <AlertTriangle size={14} /> {authError}
+                            </div>
+                        )}
+
+                        <div className="mt-8 flex items-center justify-center gap-2 px-4 py-2 bg-black/40 rounded-full border border-white/5 w-fit mx-auto">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">{address?.slice(0, 6)}...{address?.slice(-4)}</p>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
             {/* Main Content */}
             <main className="flex-1 flex flex-col relative h-full overflow-y-auto overflow-x-hidden pb-24 md:pb-0">
@@ -321,16 +581,28 @@ export default function DApp() {
                     </div>
                 </div>
 
-                <Navbar />
+                {/* Custom Sticky Dashboard Header */}
+                <div className="sticky top-0 z-[40] w-full bg-black/60 backdrop-blur-xl border-b border-white/10 py-3 sm:py-5 px-4 sm:px-8 md:px-12">
+                    <div className="max-w-[1600px] mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+                        {/* Resource Balances */}
+                        <div className="flex flex-wrap gap-2 sm:gap-4 items-center justify-center lg:justify-start">
+                            <StatWidget icon={Coins} value={usdtBalance.toLocaleString()} label="USDT" color="text-yellow-400" />
+                            <StatWidget icon={Database} value={cowTokenBalance.toLocaleString()} label="$COW" color="text-yellow-500" />
+                            <StatWidget icon={Milk} value={milkCount.toLocaleString()} label="Milk" color="text-sky-400" />
+                            <StatWidget icon={Leaf} value={grassCount.toLocaleString()} label="Grass" color="text-emerald-400" />
+                        </div>
 
-                <div className="flex-1 p-4 sm:p-8 md:p-12 relative z-10 max-w-[1600px] mx-auto w-full pt-20 sm:pt-12">
-                    {/* Top Stats Bar - Responsive */}
-                    <div className="flex flex-wrap gap-2 sm:gap-4 mb-6 sm:mb-8 md:mb-12 overflow-x-auto pb-4 no-scrollbar items-center">
-                        <StatWidget icon={Coins} value={usdtBalance.toLocaleString()} label="USDT" color="text-yellow-400" />
-                        <StatWidget icon={Database} value={cowTokenBalance.toLocaleString()} label="$COW" color="text-yellow-500" />
-                        <StatWidget icon={Milk} value={milkCount.toLocaleString()} label="Milk" color="text-sky-400" />
-                        <StatWidget icon={Leaf} value={grassCount.toLocaleString()} label="Grass" color="text-emerald-400" />
+                        {/* Wallet Section */}
+                        <div className="flex items-center gap-4 shrink-0">
+                            <div className="p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
+                                <w3m-button />
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                <div className="flex-1 p-4 sm:p-8 md:p-12 relative z-10 max-w-[1600px] mx-auto w-full">
+                    {/* Top Stats Bar Removed (Merged into Header above) */}
 
                     <AnimatePresence mode="wait">
                         {activeTab === 'farm' && (
@@ -356,8 +628,8 @@ export default function DApp() {
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap gap-2 sm:gap-4 w-full sm:w-auto">
-                                            <button onClick={handleWatchAd} disabled={dailyAdCount >= 5 || isActionLoading} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-black px-6 md:px-10 py-3 md:py-4 rounded-2xl md:rounded-[24px] font-black uppercase tracking-widest text-[9px] sm:text-[10px] hover:scale-105 transition-all shadow-xl disabled:opacity-50 shadow-orange-500/20">
-                                                <Flame size={16} /> Care ({dailyAdCount}/5)
+                                            <button onClick={handleWatchAd} disabled={dailyAdCount >= 50 || isActionLoading} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-black px-6 md:px-10 py-3 md:py-4 rounded-2xl md:rounded-[24px] font-black uppercase tracking-widest text-[9px] sm:text-[10px] hover:scale-105 transition-all shadow-xl disabled:opacity-50 shadow-orange-500/20">
+                                                <Flame size={16} /> Care ({dailyAdCount}/50)
                                             </button>
                                             <button onClick={handleHarvest} disabled={isActionLoading} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white text-black px-6 md:px-10 py-3 md:py-4 rounded-2xl md:rounded-[24px] font-black uppercase tracking-widest text-[9px] sm:text-[10px] hover:scale-105 transition-all shadow-xl shadow-white/10">
                                                 <Leaf size={16} /> Harvest
@@ -831,6 +1103,165 @@ export default function DApp() {
                                                 <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,1)] animate-pulse"></div>
                                                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">Level 4 Verified</span>
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {/* ADMIN PANEL TAB */}
+                        {activeTab === 'admin' && isAdmin && (
+                            <motion.div
+                                key="admin"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="relative min-h-[calc(100vh-10rem)] p-4 sm:p-8 md:p-12 rounded-3xl sm:rounded-[56px] overflow-hidden"
+                            >
+                                <div className="absolute inset-0 z-0 bg-gradient-to-br from-red-950/30 via-black to-black"></div>
+                                <div className="relative z-10 max-w-6xl mx-auto space-y-8">
+                                    {/* Admin Header */}
+                                    <div className="text-center space-y-4">
+                                        <div className="w-20 h-20 mx-auto bg-gradient-to-tr from-red-500 to-orange-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-red-500/30">
+                                            <Crown size={40} className="text-white" />
+                                        </div>
+                                        <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tighter text-white">Admin Panel</h2>
+                                        <div className="bg-red-500/10 border border-red-500/20 px-6 py-2 rounded-full w-fit mx-auto">
+                                            <p className="text-red-400 font-bold uppercase tracking-[0.3em] text-[10px]">Root Access • Unlimited Balance</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Platform Stats */}
+                                    {platformStats && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                            {[
+                                                { label: 'Total Users', value: platformStats.total_users, color: 'text-blue-400' },
+                                                { label: 'Total Cows', value: platformStats.total_cows, color: 'text-emerald-400' },
+                                                { label: 'Total Gold', value: platformStats.total_gold, color: 'text-yellow-400' },
+                                                { label: 'Total $COW', value: platformStats.total_cow_token, color: 'text-orange-400' },
+                                            ].map((stat) => (
+                                                <div key={stat.label} className="bg-black/60 p-4 sm:p-6 rounded-2xl border border-white/10 text-center">
+                                                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-2">{stat.label}</p>
+                                                    <p className={`text-xl sm:text-2xl font-black ${stat.color}`}>{stat.value}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Transfer Form */}
+                                    <div className="bg-black/60 p-6 sm:p-8 rounded-3xl border-2 border-red-500/20 space-y-6">
+                                        <div className="flex items-center gap-3">
+                                            <Send size={20} className="text-red-400" />
+                                            <h3 className="text-lg font-black uppercase tracking-widest text-white">Transfer Items to User</h3>
+                                        </div>
+
+                                        {adminMessage && (
+                                            <div className={`p-3 rounded-xl text-sm font-bold ${adminMessage.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>
+                                                {adminMessage.text}
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Target Wallet Address</label>
+                                                <input
+                                                    type="text"
+                                                    value={adminTargetWallet}
+                                                    onChange={(e) => setAdminTargetWallet(e.target.value)}
+                                                    placeholder="0x..."
+                                                    className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:border-red-500/50 focus:outline-none transition-all"
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Item Type</label>
+                                                    <select
+                                                        value={adminItemType}
+                                                        onChange={(e) => setAdminItemType(e.target.value)}
+                                                        className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-red-500/50 focus:outline-none transition-all"
+                                                    >
+                                                        <option value="GOLD">🪙 Gold</option>
+                                                        <option value="USDT">💵 USDT</option>
+                                                        <option value="COW_TOKEN">🐮 $COW Token</option>
+                                                        <option value="GRASS">🌿 Grass</option>
+                                                        <option value="MILK">🥛 Milk</option>
+                                                        <option value="LAND">🏡 Land Slots</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Amount</label>
+                                                    <input
+                                                        type="number"
+                                                        value={adminAmount}
+                                                        onChange={(e) => setAdminAmount(e.target.value)}
+                                                        placeholder="100"
+                                                        className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-red-500/50 focus:outline-none transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={handleAdminTransfer}
+                                                disabled={isActionLoading || !adminTargetWallet || !adminAmount}
+                                                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-600 to-orange-600 text-white font-black uppercase tracking-widest text-sm hover:brightness-110 transition-all disabled:opacity-50"
+                                            >
+                                                {isActionLoading ? 'Processing...' : `Transfer ${adminItemType}`}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* User List */}
+                                    <div className="bg-black/60 p-6 sm:p-8 rounded-3xl border border-white/10 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <UserCog size={20} className="text-slate-400" />
+                                                <h3 className="text-lg font-black uppercase tracking-widest text-white">Registered Users</h3>
+                                            </div>
+                                            <button
+                                                onClick={fetchAdminUsers}
+                                                className="text-xs font-bold text-yellow-400 hover:text-yellow-300 transition-all uppercase tracking-widest"
+                                            >
+                                                Refresh
+                                            </button>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="border-b border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                                        <th className="text-left py-3 px-2">Wallet</th>
+                                                        <th className="text-left py-3 px-2">Role</th>
+                                                        <th className="text-right py-3 px-2">Gold</th>
+                                                        <th className="text-right py-3 px-2">USDT</th>
+                                                        <th className="text-right py-3 px-2">$COW</th>
+                                                        <th className="text-right py-3 px-2">Cows</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {adminUsers.map((user) => (
+                                                        <tr key={user.id} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                                                            <td className="py-3 px-2 font-mono text-xs text-slate-300">
+                                                                <button
+                                                                    onClick={() => setAdminTargetWallet(user.wallet_address)}
+                                                                    className="hover:text-yellow-400 transition-all"
+                                                                    title="Click to set as transfer target"
+                                                                >
+                                                                    {user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)}
+                                                                </button>
+                                                            </td>
+                                                            <td className="py-3 px-2">
+                                                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${user.role === 'ADMIN' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                                                    {user.role}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-3 px-2 text-right text-yellow-400 font-bold">{user.gold_balance}</td>
+                                                            <td className="py-3 px-2 text-right text-emerald-400 font-bold">{user.usdt_balance}</td>
+                                                            <td className="py-3 px-2 text-right text-orange-400 font-bold">{user.cow_token}</td>
+                                                            <td className="py-3 px-2 text-right text-white font-bold">{user.cow_count}</td>
+                                                        </tr>
+                                                    ))}
+                                                    {adminUsers.length === 0 && (
+                                                        <tr><td colSpan={6} className="text-center py-8 text-slate-500">No users found</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>

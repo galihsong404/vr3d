@@ -29,10 +29,15 @@ func main() {
 	adWebhookUC := usecase.NewAdWebhookUsecase(db)
 	userUC := usecase.NewUserUsecase(db)
 	authUC := usecase.NewAuthUsecase(db)
+	adminUC := usecase.NewAdminUsecase(db)
+
+	// Seed Dev Wallet as Root Admin
+	authUC.SeedDevWallet(context.Background())
 
 	gameHandler := handler.NewGameHandler(farmUC, marketUC, adWebhookUC, userUC)
 	userHandler := handler.NewUserHandler(userUC)
 	authHandler := handler.NewAuthHandler(authUC)
+	adminHandler := handler.NewAdminHandler(adminUC)
 
 	// 3. Setup Router
 	if os.Getenv("ENV") == "production" {
@@ -55,7 +60,9 @@ func main() {
 		})
 
 		// Public Auth
-		v1.POST("/auth/login", authHandler.LoginOrRegisterHandler)
+		v1.GET("/auth/nonce/:wallet", authHandler.GetNonceHandler)
+		v1.POST("/auth/login", authHandler.LoginWithSignatureHandler)
+		v1.POST("/auth/login-legacy", authHandler.LoginOrRegisterHandler) // Dev/testing only
 
 		// Webhooks (Public but Signature protected)
 		v1.POST("/webhooks/ad-reward", gameHandler.AdWebhookHandler)
@@ -87,6 +94,15 @@ func main() {
 			protected.POST("/market/claim-inapp", gameHandler.ClaimInAppHandler)
 			protected.POST("/market/deposit", gameHandler.DepositHandler)
 			protected.POST("/market/withdraw", gameHandler.WithdrawHandler)
+		}
+
+		// Admin Routes (ADMIN role required)
+		admin := v1.Group("/admin")
+		admin.Use(middleware.RequireAuth(), middleware.RequireRole("ADMIN"))
+		{
+			admin.POST("/transfer", adminHandler.TransferHandler)
+			admin.GET("/users", adminHandler.ListUsersHandler)
+			admin.GET("/stats", adminHandler.StatsHandler)
 		}
 	}
 

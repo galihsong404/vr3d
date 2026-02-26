@@ -1,6 +1,7 @@
-export const CASH_COW_TOKEN_ADDRESS = '0x...'; // Placeholder - to be updated after deployment
-export const GOLDEN_COW_STAKING_ADDRESS = '0x...'; // Placeholder - to be updated after deployment
-export const GOLDEN_COW_NFT_ADDRESS = '0x...'; // Placeholder - the address of the Golden Cow NFT contract
+export const CASH_COW_TOKEN_ADDRESS = '0x...'; // Placeholder
+export const GOLDEN_COW_STAKING_ADDRESS = '0x...'; // Placeholder
+export const GOLDEN_COW_NFT_ADDRESS = '0x...'; // Placeholder
+export const CASH_COW_ACCESS_ADDRESS = '0x...'; // Placeholder - Registration Contract
 
 export const CASH_COW_TOKEN_ABI = [
     "function name() view returns (string)",
@@ -36,4 +37,19 @@ export const GOLDEN_COW_STAKING_ABI = [
     "function setFee(uint8 cType, uint256 fee)",
     "function setLockedReward(uint8 cType, uint256 reward)",
     "function setTreasury(address newTreasury)"
+];
+
+export const GOLDEN_COW_NFT_ABI = [
+    "function buyNFT(uint8 cType, bool useCOW)",
+    "function getCowType(uint256 tokenId) view returns (uint8)",
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function balanceOf(address owner) view returns (uint256)",
+    "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)"
+];
+
+export const CASH_COW_ACCESS_ABI = [
+    "function register() payable",
+    "function registered(address) view returns (bool)",
+    "function registrationFee() view returns (uint256)",
+    "function isUserRegistered(address user) view returns (bool)"
 ];
